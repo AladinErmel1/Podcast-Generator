@@ -1,0 +1,162 @@
+"""Streamlit web app for the podcast generator."""
+
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+import streamlit as st
+from dotenv import load_dotenv
+
+PROJECT_DIR = Path(__file__).parent / "podcast-generator" / "podcast-generator"
+sys.path.insert(0, str(PROJECT_DIR))
+
+import config
+from podcast_generator import PodcastGenerator
+
+load_dotenv()
+
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "25"))
+
+
+def collect_progress(message: str) -> None:
+    if message.startswith(("Document:", "Script:", "Audio:", "=")):
+        return
+    st.session_state.setdefault("progress_messages", []).append(message)
+
+
+def ensure_api_key() -> bool:
+    if os.getenv("OPENAI_API_KEY"):
+        return True
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY")
+    except Exception:
+        api_key = None
+    if api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
+        return True
+    return False
+
+
+def require_app_password() -> None:
+    password = os.getenv("APP_PASSWORD")
+    if not password:
+        return
+
+    entered = st.text_input("Password", type="password")
+    if entered != password:
+        st.stop()
+
+
+def main() -> None:
+    st.set_page_config(page_title="Podcast Generator", layout="centered")
+    st.title("Podcast Generator")
+
+    st.session_state.setdefault("progress_messages", [])
+    st.session_state.setdefault("script_path", None)
+    st.session_state.setdefault("audio_path", None)
+
+    if not ensure_api_key():
+        st.error("OPENAI_API_KEY is not configured.")
+        st.stop()
+
+    require_app_password()
+
+    uploaded_file = st.file_uploader(
+        "Document",
+        type=["pdf", "txt", "docx"],
+        accept_multiple_files=False,
+    )
+    if uploaded_file and uploaded_file.size > MAX_UPLOAD_MB * 1024 * 1024:
+        st.error(f"File is too large. Maximum upload size is {MAX_UPLOAD_MB} MB.")
+        st.stop()
+    title = st.text_input("Title", placeholder="Optional; uses the filename if empty")
+    duration = st.radio(
+        "Duration",
+        options=list(config.VALID_DURATIONS_MINUTES),
+        index=list(config.VALID_DURATIONS_MINUTES).index(config.DEFAULT_DURATION_MINUTES),
+        format_func=lambda value: f"{value} min",
+        horizontal=True,
+    )
+    generate_audio = st.toggle("Create MP3 audio", value=True)
+
+    generate_clicked = st.button(
+        "Generate",
+        type="primary",
+        disabled=uploaded_file is None,
+        use_container_width=True,
+    )
+
+    status_box = st.empty()
+    progress_box = st.container()
+
+    if generate_clicked and uploaded_file:
+        st.session_state["progress_messages"] = []
+        st.session_state["script_path"] = None
+        st.session_state["audio_path"] = None
+
+        suffix = Path(uploaded_file.name).suffix.lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(uploaded_file.getbuffer())
+            temp_path = Path(temp_file.name)
+
+        try:
+            with st.spinner("Generating podcast..."):
+                generator = PodcastGenerator(progress_callback=collect_progress)
+                output_dir = tempfile.mkdtemp(prefix="podcast_output_")
+                script_path, audio_path = generator.create_podcast(
+                    document_path=temp_path,
+                    output_dir=output_dir,
+                    paper_title=title.strip() or Path(uploaded_file.name).stem,
+                    duration_minutes=duration,
+                    generate_audio=generate_audio,
+                )
+                st.session_state["script_path"] = script_path
+                st.session_state["audio_path"] = audio_path
+            status_box.success("Done.")
+        except Exception as exc:
+            status_box.error(f"Generation failed: {exc}")
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    with progress_box:
+        if st.session_state.get("progress_messages"):
+            st.subheader("Progress")
+            for message in st.session_state["progress_messages"][-12:]:
+                st.write(message)
+
+    script_path = st.session_state.get("script_path")
+    audio_path = st.session_state.get("audio_path")
+
+    if script_path:
+        script_file = Path(script_path)
+        script_text = script_file.read_text(encoding="utf-8")
+        st.subheader("Script")
+        st.text_area("Generated script", value=script_text, height=420)
+        st.download_button(
+            "Download script",
+            data=script_text,
+            file_name=script_file.name,
+            mime="text/plain",
+        )
+
+    if audio_path:
+        audio_file = Path(audio_path)
+        audio_bytes = audio_file.read_bytes()
+        st.subheader("Audio")
+        st.audio(audio_bytes, format="audio/mp3")
+        st.download_button(
+            "Download MP3",
+            data=audio_bytes,
+            file_name=audio_file.name,
+            mime="audio/mpeg",
+        )
+
+
+if __name__ == "__main__":
+    main()

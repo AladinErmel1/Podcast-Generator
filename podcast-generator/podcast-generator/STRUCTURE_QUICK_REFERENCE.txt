@@ -1,0 +1,22 @@
+Podcast Structure Quick Reference
+=================================
+
+Speakers:
+- SARAH: audit and risk management expert
+- MIKE: governance specialist and researcher
+
+Duration presets:
+- 5 minutes
+- 10 minutes
+- 15 minutes
+- 20 minutes
+
+Script sections:
+1. Opening
+2. Understanding the document
+3. Analysis and implications
+4. Closing takeaways
+
+Word target:
+duration_minutes * 150 words, plus or minus 10 percent.
+

@@ -1,0 +1,37 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Output files
+output/
+*.mp3
+*.wav
+*.m4a
+*.png
+*.pdf
+*.docx
+!README_FIRST.txt
+!podcast-generator/podcast-generator/README_FIRST.txt
+!podcast-generator/podcast-generator/STRUCTURE_QUICK_REFERENCE.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
