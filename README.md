@@ -7,7 +7,7 @@ Turn a PDF, TXT, or DOCX document into a two-speaker podcast with Sarah and Mike
 Open the Streamlit app link:
 
 ```text
-https://your-streamlit-app-url.streamlit.app
+https://podcast-generatorgit-3lfrcezzxvhrwt2nfpkup3.streamlit.app/
 ```
 
 Then:
@@ -25,4 +25,3 @@ Your API key is used only for the current app session and is not saved by the ap
 - A source-grounded podcast script.
 - A natural conversation between Sarah and Mike.
 - Optional MP3 audio.
-
