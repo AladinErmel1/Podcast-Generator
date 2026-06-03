@@ -30,10 +30,17 @@ Use this option if you want to run or modify the app yourself.
 
 1. Open this repository on GitHub.
 2. Download or clone the repository.
-3. Install the dependencies from `requirements.txt`.
-4. Run `app.py` with Streamlit.
-5. Open the local Streamlit URL shown in your terminal.
-6. Follow the same app steps from Option 1.
+3. Open a terminal and run:
+
+```bash
+git clone https://github.com/AladinErmel1/Podcast-Generator.git
+cd Podcast-Generator
+python -m pip install -r requirements.txt
+streamlit run app.py
+```
+
+4. Open the local Streamlit URL shown in your terminal.
+5. Follow the same app steps from Option 1.
 
 The GitHub project contains the source code, app configuration, and generator logic.
 
@@ -42,4 +49,3 @@ The GitHub project contains the source code, app configuration, and generator lo
 - A source-grounded podcast script.
 - A natural conversation between two hosts.
 - Optional MP3 audio.
-
