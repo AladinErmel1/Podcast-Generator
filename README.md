@@ -8,22 +8,21 @@ Turn a PDF, TXT, or DOCX document into a two-speaker podcast with Sarah and Mike
 - Choose 5, 10, 15, or 20 minutes.
 - Generate a source-grounded script.
 - Create downloadable MP3 audio.
+- Let each user enter their own OpenAI API key.
 
-## Deploy On Railway
+## Deploy On Streamlit Community Cloud
 
-1. Push this repo to GitHub.
-2. Create a new Railway project from the GitHub repo.
-3. Deploy.
+1. Push this repository to GitHub.
+2. In Streamlit Community Cloud, create a new app from this repo.
+3. Set the app entry point to `app.py`.
+4. Deploy.
 
-By default, each user enters their own OpenAI API key in the app.
+The app uses:
 
-Optional environment variables:
+- `requirements.txt` for Python dependencies.
+- `packages.txt` for `ffmpeg`, which is needed for MP3 assembly.
 
-- `OPENAI_API_KEY`: use one shared server key instead of asking each user.
-- `APP_PASSWORD`: limit access to the app.
-- `MAX_UPLOAD_MB`: change the upload limit.
-
-Railway uses the included `Procfile`, `railway.json`, and `nixpacks.toml`.
+By default, users enter their own OpenAI API key in the app. If you prefer one shared key, add `OPENAI_API_KEY` in Streamlit secrets. You can also add `APP_PASSWORD` to limit access or `MAX_UPLOAD_MB` to change the upload limit.
 
 ## Run Locally
 
@@ -34,6 +33,3 @@ streamlit run app.py
 
 The `.env` file is optional. If you skip it, the app asks for an API key in the browser.
 
-```bash
-OPENAI_API_KEY=your_openai_api_key_here
-```

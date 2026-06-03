@@ -285,7 +285,9 @@ class PodcastGenerator:
             "You are a senior podcast script writer. Write only dialogue lines. "
             "Every line must start with SARAH: or MIKE:. Sarah is an audit and risk "
             "management expert. Mike is a governance specialist and researcher. "
-            "The dialogue must be natural, rigorous, source-grounded, and accessible."
+            "The dialogue must sound like a real, curious podcast conversation: "
+            "responsive, source-grounded, intellectually rigorous, and accessible. "
+            "Avoid lecture-like monologues."
         )
         user = f"""
 Create the {section_name} section of a two-speaker podcast about "{paper_title}".
@@ -296,12 +298,17 @@ This section target: about {target_words} spoken words.
 
 Rules:
 - Write only speaker dialogue, one turn per paragraph.
-- Alternate naturally between SARAH and MIKE.
+- Alternate naturally between SARAH and MIKE, but make each turn respond to the previous one.
 - Use the source notes only; do not invent study details, numbers, authors, or claims.
 - Explain acronyms in full and avoid acronym-heavy speech.
 - Keep Sarah and Mike balanced across the section.
 - Do not include markdown headings, timestamps, music cues, or narration.
 - Make the section self-contained but continuous with the previous section.
+- Keep most turns to 1-3 spoken sentences. Avoid long mini-lectures.
+- Include natural interaction: follow-up questions, brief reactions, clarifications, and callbacks to earlier points.
+- Let them occasionally challenge or refine each other's interpretation politely.
+- Avoid repeatedly saying each other's names. Use names only when it sounds natural.
+- Do not simply alternate summaries. Mike and Sarah should build on each other's ideas.
 
 Previous section summary:
 {previous_summary or "This is the first section."}
@@ -312,7 +319,7 @@ Source notes:
         return self._call_text_model(
             system=system,
             user=user,
-            max_output_tokens=max(700, round(target_words * 2.2)),
+            max_output_tokens=max(300, round(target_words * 1.7)),
         )
 
     def _summarize_previous_script(self, section_texts: Iterable[str]) -> str:
@@ -339,9 +346,14 @@ Source notes:
 
         target_words = self.target_word_count(duration_minutes)
         current_dialogue = dialogue
+        best_dialogue = dialogue
+        best_words = words
 
         for attempt in range(1, 4):
             current_words = self._dialogue_word_count(current_dialogue)
+            if abs(current_words - target_words) < abs(best_words - target_words):
+                best_dialogue = current_dialogue
+                best_words = current_words
             if min_words <= current_words <= max_words:
                 return current_dialogue
 
@@ -354,7 +366,8 @@ Source notes:
             current_script = self.format_script(current_dialogue)
             system = (
                 "You revise podcast scripts. Return only dialogue lines that start with "
-                "SARAH: or MIKE:. Keep the script source-grounded and conversational."
+                "SARAH: or MIKE:. Keep the script source-grounded and make it sound "
+                "like a natural podcast conversation, not alternating mini-lectures."
             )
             user = f"""
 Revise this complete Mike/Sarah podcast script about "{paper_title}".
@@ -373,6 +386,12 @@ Hard requirements:
 - Use only the source notes for factual claims.
 - Avoid acronym-heavy wording and explain necessary terms in full.
 - Return only SARAH: and MIKE: dialogue lines.
+- Keep most turns short: 1-3 spoken sentences.
+- For short episodes, use compact exchanges. Most turns should stay under 45 words.
+- Add more direct interaction: follow-up questions, reactions, clarifications, callbacks, and polite refinements.
+- Avoid repeated name callouts and stiff transitions.
+- Preserve factual accuracy while making the exchange more conversational.
+- If the script is too long, remove repeated framing, extra examples, and redundant transitions before removing source facts.
 
 Source notes:
 {source_notes}
@@ -380,7 +399,10 @@ Source notes:
 Current script:
 {current_script}
 """
-            token_budget = max(900, round(max_words * 2.0 if action == "condense" else target_words * 2.5))
+            if action == "condense":
+                token_budget = max(500, round(max_words * 1.45))
+            else:
+                token_budget = max(900, round(target_words * 2.2))
             repaired_text = self._call_text_model(
                 system=system,
                 user=user,
@@ -390,10 +412,48 @@ Current script:
             if not repaired_dialogue:
                 raise RuntimeError("Script repair failed: no valid Mike/Sarah dialogue returned.")
             current_dialogue = repaired_dialogue
+            repaired_words = self._dialogue_word_count(current_dialogue)
+            if abs(repaired_words - target_words) < abs(best_words - target_words):
+                best_dialogue = current_dialogue
+                best_words = repaired_words
 
-        final_words = self._dialogue_word_count(current_dialogue)
+        if best_words > max_words:
+            trimmed_dialogue = self._trim_dialogue_to_word_limit(best_dialogue, max_words)
+            trimmed_words = self._dialogue_word_count(trimmed_dialogue)
+            if min_words <= trimmed_words <= max_words:
+                self._log(f"Trimmed script to {trimmed_words} words after repair.")
+                return trimmed_dialogue
+
+        final_words = self._dialogue_word_count(best_dialogue)
         self._log(f"Warning: repaired script is {final_words} words, outside the target range.")
-        return current_dialogue
+        return best_dialogue
+
+    def _trim_dialogue_to_word_limit(
+        self,
+        dialogue: list[DialogueSegment],
+        max_words: int,
+    ) -> list[DialogueSegment]:
+        """Trim longest turns just enough to satisfy a word limit."""
+        trimmed = [DialogueSegment(segment.speaker, segment.text) for segment in dialogue]
+
+        while self._dialogue_word_count(trimmed) > max_words:
+            longest_index = max(
+                range(len(trimmed)),
+                key=lambda index: self.count_words(trimmed[index].text),
+            )
+            segment = trimmed[longest_index]
+            words = segment.text.split()
+            if len(words) <= 12:
+                break
+
+            remove_count = min(self._dialogue_word_count(trimmed) - max_words, max(1, len(words) // 4))
+            new_words = words[:-remove_count]
+            new_text = " ".join(new_words).strip()
+            if new_text and new_text[-1] not in ".!?":
+                new_text += "."
+            trimmed[longest_index] = DialogueSegment(segment.speaker, new_text)
+
+        return trimmed
 
     def _call_text_model(self, system: str, user: str, max_output_tokens: int) -> str:
         budgets = [max_output_tokens]
