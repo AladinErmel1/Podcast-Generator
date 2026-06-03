@@ -9,6 +9,7 @@ from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
+from openai import OpenAI
 
 PROJECT_DIR = Path(__file__).parent / "podcast-generator" / "podcast-generator"
 sys.path.insert(0, str(PROJECT_DIR))
@@ -67,6 +68,36 @@ def require_app_password() -> None:
         st.stop()
 
 
+def default_voice_label(voice_id: str) -> str:
+    for label, value in config.VOICE_OPTIONS.items():
+        if value == voice_id:
+            return label
+    return next(iter(config.VOICE_OPTIONS))
+
+
+def generate_voice_preview(
+    api_key: str,
+    voice: str,
+    speaker_name: str,
+    speaker_role: str,
+) -> bytes:
+    client = OpenAI(api_key=api_key)
+    response = client.audio.speech.create(
+        model=config.TTS_MODEL,
+        voice=voice,
+        input=(
+            f"Hi, I am {speaker_name}. This is a short preview of how I will sound "
+            "in your podcast conversation."
+        ),
+        instructions=(
+            f"Speak as {speaker_name}, {speaker_role}. "
+            "Sound natural, clear, and conversational."
+        ),
+        response_format="mp3",
+    )
+    return response.content
+
+
 def main() -> None:
     st.set_page_config(page_title="Podcast Generator", layout="centered")
     st.title("Podcast Generator")
@@ -74,6 +105,7 @@ def main() -> None:
     st.session_state.setdefault("progress_messages", [])
     st.session_state.setdefault("script_path", None)
     st.session_state.setdefault("audio_path", None)
+    st.session_state.setdefault("voice_previews", {})
 
     require_app_password()
     api_key = get_api_key()
@@ -95,6 +127,52 @@ def main() -> None:
         horizontal=True,
     )
     generate_audio = st.toggle("Create MP3 audio", value=True)
+
+    with st.expander("Podcast hosts", expanded=False):
+        speaker_col_1, speaker_col_2 = st.columns(2)
+        voice_labels = list(config.VOICE_OPTIONS.keys())
+
+        with speaker_col_1:
+            woman_name = st.text_input("First host name", value="Sarah")
+            woman_voice_label = st.selectbox(
+                "First host voice",
+                options=voice_labels,
+                index=voice_labels.index(default_voice_label(config.SPEAKER_VOICES["woman"])),
+            )
+            woman_voice = config.VOICE_OPTIONS[woman_voice_label]
+            if st.button("Preview first host", use_container_width=True):
+                try:
+                    st.session_state["voice_previews"]["woman"] = generate_voice_preview(
+                        api_key,
+                        woman_voice,
+                        woman_name.strip() or "Sarah",
+                        "an audit and risk management expert",
+                    )
+                except Exception as exc:
+                    st.error(f"Preview failed: {exc}")
+            if st.session_state["voice_previews"].get("woman"):
+                st.audio(st.session_state["voice_previews"]["woman"], format="audio/mp3")
+
+        with speaker_col_2:
+            man_name = st.text_input("Second host name", value="Mike")
+            man_voice_label = st.selectbox(
+                "Second host voice",
+                options=voice_labels,
+                index=voice_labels.index(default_voice_label(config.SPEAKER_VOICES["man"])),
+            )
+            man_voice = config.VOICE_OPTIONS[man_voice_label]
+            if st.button("Preview second host", use_container_width=True):
+                try:
+                    st.session_state["voice_previews"]["man"] = generate_voice_preview(
+                        api_key,
+                        man_voice,
+                        man_name.strip() or "Mike",
+                        "a governance specialist and researcher",
+                    )
+                except Exception as exc:
+                    st.error(f"Preview failed: {exc}")
+            if st.session_state["voice_previews"].get("man"):
+                st.audio(st.session_state["voice_previews"]["man"], format="audio/mp3")
 
     generate_clicked = st.button(
         "Generate",
@@ -120,6 +198,14 @@ def main() -> None:
             with st.spinner("Generating podcast..."):
                 generator = PodcastGenerator(
                     openai_api_key=api_key,
+                    speaker_names={
+                        "woman": woman_name.strip() or "Sarah",
+                        "man": man_name.strip() or "Mike",
+                    },
+                    speaker_voices={
+                        "woman": woman_voice,
+                        "man": man_voice,
+                    },
                     progress_callback=collect_progress,
                 )
                 output_dir = tempfile.mkdtemp(prefix="podcast_output_")

@@ -41,6 +41,8 @@ class PodcastGenerator:
         openai_api_key: str | None = None,
         script_model: str | None = None,
         tts_model: str | None = None,
+        speaker_names: dict[str, str] | None = None,
+        speaker_voices: dict[str, str] | None = None,
         progress_callback: ProgressCallback | None = None,
     ):
         self.api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
@@ -52,7 +54,10 @@ class PodcastGenerator:
         self.client = OpenAI(api_key=self.api_key)
         self.script_model = script_model or os.getenv("OPENAI_SCRIPT_MODEL", config.SCRIPT_MODEL)
         self.tts_model = tts_model or os.getenv("OPENAI_TTS_MODEL", config.TTS_MODEL)
+        self.speaker_names = self._normalize_speaker_names(speaker_names or config.SPEAKER_NAMES)
         self.voices = dict(config.SPEAKER_VOICES)
+        if speaker_voices:
+            self.voices.update(speaker_voices)
         self.words_per_minute = config.WORDS_PER_MINUTE
         self.target_duration_minutes = config.DEFAULT_DURATION_MINUTES
         self.progress_callback = progress_callback
@@ -61,6 +66,36 @@ class PodcastGenerator:
         if self.progress_callback:
             self.progress_callback(message)
         print(message)
+
+    @staticmethod
+    def _normalize_speaker_names(names: dict[str, str]) -> dict[str, str]:
+        normalized = dict(config.SPEAKER_NAMES)
+        for speaker in ("woman", "man"):
+            value = (names.get(speaker) or normalized[speaker]).strip()
+            value = re.sub(r"[^A-Za-z0-9 '\-]", "", value).strip()
+            normalized[speaker] = (value or config.SPEAKER_NAMES[speaker]).upper()
+        return normalized
+
+    def _speaker_label(self, speaker: str) -> str:
+        return self.speaker_names.get(speaker, config.SPEAKER_NAMES.get(speaker, speaker.upper()))
+
+    def _speaker_label_pattern(self) -> str:
+        labels = {
+            self._speaker_label("woman"),
+            self._speaker_label("man"),
+            "SARAH",
+            "MIKE",
+        }
+        escaped = sorted((re.escape(label) for label in labels), key=len, reverse=True)
+        return "|".join(escaped)
+
+    def _speaker_from_label(self, label: str) -> str | None:
+        normalized = label.strip().upper()
+        if normalized in {self._speaker_label("woman"), "SARAH"}:
+            return "woman"
+        if normalized in {self._speaker_label("man"), "MIKE"}:
+            return "man"
+        return None
 
     @staticmethod
     def validate_duration(duration_minutes: int) -> int:
@@ -281,10 +316,13 @@ class PodcastGenerator:
         previous_summary: str,
         duration_minutes: int,
     ) -> str:
+        woman_label = self._speaker_label("woman")
+        man_label = self._speaker_label("man")
         system = (
             "You are a senior podcast script writer. Write only dialogue lines. "
-            "Every line must start with SARAH: or MIKE:. Sarah is an audit and risk "
-            "management expert. Mike is a governance specialist and researcher. "
+            f"Every line must start with {woman_label}: or {man_label}:. "
+            f"{woman_label.title()} is an audit and risk management expert. "
+            f"{man_label.title()} is a governance specialist and researcher. "
             "The dialogue must sound like a real, curious podcast conversation: "
             "responsive, source-grounded, intellectually rigorous, and accessible. "
             "Avoid lecture-like monologues."
@@ -298,10 +336,10 @@ This section target: about {target_words} spoken words.
 
 Rules:
 - Write only speaker dialogue, one turn per paragraph.
-- Alternate naturally between SARAH and MIKE, but make each turn respond to the previous one.
+- Alternate naturally between {woman_label} and {man_label}, but make each turn respond to the previous one.
 - Use the source notes only; do not invent study details, numbers, authors, or claims.
 - Explain acronyms in full and avoid acronym-heavy speech.
-- Keep Sarah and Mike balanced across the section.
+- Keep {woman_label.title()} and {man_label.title()} balanced across the section.
 - Do not include markdown headings, timestamps, music cues, or narration.
 - Make the section self-contained but continuous with the previous section.
 - Keep most turns to 1-3 spoken sentences. Avoid long mini-lectures.
@@ -349,6 +387,9 @@ Source notes:
         best_dialogue = dialogue
         best_words = words
 
+        woman_label = self._speaker_label("woman")
+        man_label = self._speaker_label("man")
+
         for attempt in range(1, 4):
             current_words = self._dialogue_word_count(current_dialogue)
             if abs(current_words - target_words) < abs(best_words - target_words):
@@ -366,7 +407,7 @@ Source notes:
             current_script = self.format_script(current_dialogue)
             system = (
                 "You revise podcast scripts. Return only dialogue lines that start with "
-                "SARAH: or MIKE:. Keep the script source-grounded and make it sound "
+                f"{woman_label}: or {man_label}:. Keep the script source-grounded and make it sound "
                 "like a natural podcast conversation, not alternating mini-lectures."
             )
             user = f"""
@@ -382,10 +423,10 @@ Hard requirements:
 - Do not exceed {max_words} words.
 - Do not go below {min_words} words.
 - Preserve the flow: understand the document, analyze implications, close with takeaways.
-- Keep Sarah and Mike balanced.
+- Keep {woman_label.title()} and {man_label.title()} balanced.
 - Use only the source notes for factual claims.
 - Avoid acronym-heavy wording and explain necessary terms in full.
-- Return only SARAH: and MIKE: dialogue lines.
+- Return only {woman_label}: and {man_label}: dialogue lines.
 - Keep most turns short: 1-3 spoken sentences.
 - For short episodes, use compact exchanges. Most turns should stay under 45 words.
 - Add more direct interaction: follow-up questions, reactions, clarifications, callbacks, and polite refinements.
@@ -493,15 +534,18 @@ Current script:
         return "\n".join(pieces).strip()
 
     @staticmethod
-    def _normalize_script_text(script_text: str) -> str:
+    def _normalize_script_text_static(script_text: str, label_pattern: str) -> str:
         lines = []
         for raw_line in script_text.splitlines():
             line = raw_line.strip()
             if not line:
                 continue
-            if re.match(r"^(SARAH|MIKE)\s*:", line, flags=re.IGNORECASE):
+            if re.match(rf"^({label_pattern})\s*:", line, flags=re.IGNORECASE):
                 lines.append(line)
         return "\n".join(lines)
+
+    def _normalize_script_text(self, script_text: str) -> str:
+        return self._normalize_script_text_static(script_text, self._speaker_label_pattern())
 
     def _parse_script(self, script_text: str) -> list[DialogueSegment]:
         """Parse raw model output into speaker turns."""
@@ -522,11 +566,14 @@ Current script:
             if not line:
                 continue
 
-            match = re.match(r"^(SARAH|MIKE)\s*:\s*(.+)$", line, flags=re.IGNORECASE)
+            match = re.match(
+                rf"^({self._speaker_label_pattern()})\s*:\s*(.+)$",
+                line,
+                flags=re.IGNORECASE,
+            )
             if match:
                 flush()
-                speaker_name = match.group(1).upper()
-                current_speaker = "woman" if speaker_name == "SARAH" else "man"
+                current_speaker = self._speaker_from_label(match.group(1))
                 current_text = [match.group(2).strip()]
             elif re.match(r"^[A-Z][A-Z0-9 _-]{1,40}\s*:", line):
                 flush()
@@ -536,8 +583,7 @@ Current script:
         flush()
         return dialogue
 
-    @staticmethod
-    def format_script(dialogue: Iterable[DialogueSegment | dict[str, str]]) -> str:
+    def format_script(self, dialogue: Iterable[DialogueSegment | dict[str, str]]) -> str:
         lines: list[str] = []
         for segment in dialogue:
             if isinstance(segment, dict):
@@ -546,7 +592,7 @@ Current script:
             else:
                 speaker = segment.speaker
                 text = segment.text
-            speaker_name = config.SPEAKER_NAMES.get(speaker, speaker.upper())
+            speaker_name = self._speaker_label(speaker)
             lines.append(f"{speaker_name}: {text}")
         return "\n\n".join(lines)
 
@@ -604,10 +650,22 @@ Current script:
             "response_format": "mp3",
         }
         if not self.tts_model.startswith("tts-1"):
-            kwargs["instructions"] = config.SPEAKER_TTS_INSTRUCTIONS.get(speaker, "")
+            kwargs["instructions"] = self._tts_instructions(speaker)
 
         response = self.client.audio.speech.create(**kwargs)
         output_path.write_bytes(response.content)
+
+    def _tts_instructions(self, speaker: str) -> str:
+        name = self._speaker_label(speaker).title()
+        if speaker == "woman":
+            return (
+                f"Speak as {name}: warm, thoughtful, clear, and engaged. "
+                "Use a professional podcast-host tone."
+            )
+        return (
+            f"Speak as {name}: calm, precise, curious, and conversational. "
+            "Use a professional researcher tone."
+        )
 
     @staticmethod
     def split_tts_input(text: str, max_chars: int = config.TTS_MAX_INPUT_CHARS) -> list[str]:

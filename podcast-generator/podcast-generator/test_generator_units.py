@@ -40,6 +40,25 @@ class PodcastGeneratorHelperTests(unittest.TestCase):
             ],
         )
 
+    def test_parser_supports_custom_speaker_names(self) -> None:
+        generator = PodcastGenerator(
+            openai_api_key="sk-test",
+            speaker_names={"woman": "Anna", "man": "Ben"},
+        )
+        dialogue = generator._parse_script(
+            """
+            ANNA: Let us introduce the document.
+            BEN: I want to unpack the main risk.
+            """
+        )
+        self.assertEqual(
+            dialogue,
+            [
+                DialogueSegment("woman", "Let us introduce the document."),
+                DialogueSegment("man", "I want to unpack the main risk."),
+            ],
+        )
+
     def test_tts_chunker_respects_character_limit(self) -> None:
         text = " ".join(["This is a sentence."] * 600)
         chunks = PodcastGenerator.split_tts_input(text, max_chars=500)
@@ -78,4 +97,3 @@ class PodcastGeneratorHelperTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

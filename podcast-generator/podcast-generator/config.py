@@ -36,6 +36,15 @@ SPEAKER_VOICES = {
     "man": "cedar",
 }
 
+VOICE_OPTIONS = {
+    "Marin - warm and natural (recommended)": "marin",
+    "Cedar - calm and grounded (recommended)": "cedar",
+    "Coral - bright and friendly": "coral",
+    "Sage - measured and thoughtful": "sage",
+    "Verse - smooth and expressive": "verse",
+    "Nova - clear and energetic": "nova",
+}
+
 SPEAKER_TTS_INSTRUCTIONS = {
     "woman": (
         "Speak as Sarah: warm, thoughtful, clear, and engaged. "
@@ -70,4 +79,3 @@ SCRIPT_SECTIONS = (
     ),
     ("closing", "Key takeaways and a concise closing reflection", 0.10),
 )
-
