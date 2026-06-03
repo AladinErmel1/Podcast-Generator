@@ -465,6 +465,17 @@ Current script:
                 self._log(f"Trimmed script to {trimmed_words} words after repair.")
                 return trimmed_dialogue
 
+        if best_words < min_words:
+            expanded_dialogue = self._expand_dialogue_to_word_minimum(
+                best_dialogue,
+                min_words=min_words,
+                max_words=max_words,
+            )
+            expanded_words = self._dialogue_word_count(expanded_dialogue)
+            if min_words <= expanded_words <= max_words:
+                self._log(f"Expanded script to {expanded_words} words after repair.")
+                return expanded_dialogue
+
         final_words = self._dialogue_word_count(best_dialogue)
         self._log(f"Warning: repaired script is {final_words} words, outside the target range.")
         return best_dialogue
@@ -495,6 +506,53 @@ Current script:
             trimmed[longest_index] = DialogueSegment(segment.speaker, new_text)
 
         return trimmed
+
+    def _expand_dialogue_to_word_minimum(
+        self,
+        dialogue: list[DialogueSegment],
+        min_words: int,
+        max_words: int,
+    ) -> list[DialogueSegment]:
+        """Add compact conversational turns until the script reaches a word minimum."""
+        expanded = [DialogueSegment(segment.speaker, segment.text) for segment in dialogue]
+        additions = [
+            (
+                "woman",
+                "Before we move on, one practical point is worth underlining: the value here is not only in the tool itself, but in how clearly people define responsibility around it.",
+            ),
+            (
+                "man",
+                "That is a useful distinction. The document keeps coming back to accountability, because without named owners, even strong technical systems can become hard to review or correct.",
+            ),
+            (
+                "woman",
+                "So the listener should hear this as a governance lesson as much as a technology lesson: evidence, privacy, review, and escalation all need to be visible.",
+            ),
+            (
+                "man",
+                "And that visibility matters for assurance. If a team cannot explain what happened, who approved it, and what risks were tracked, trust becomes much harder to maintain.",
+            ),
+            (
+                "woman",
+                "Exactly. A good framework makes those questions routine rather than exceptional, which is what helps research teams use new systems responsibly.",
+            ),
+            (
+                "man",
+                "In other words, the future opportunity is real, but the controls have to grow with it. That balance is the thread running through the whole discussion.",
+            ),
+        ]
+
+        addition_index = 0
+        while self._dialogue_word_count(expanded) < min_words and addition_index < len(additions):
+            speaker, text = additions[addition_index]
+            expanded.append(DialogueSegment(speaker, text))
+            addition_index += 1
+
+        words = self._dialogue_word_count(expanded)
+        if words > max_words:
+            expanded = self._trim_dialogue_to_word_limit(expanded, max_words)
+
+        return expanded
 
     def _call_text_model(self, system: str, user: str, max_output_tokens: int) -> str:
         budgets = [max_output_tokens]

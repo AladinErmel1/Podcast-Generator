@@ -71,6 +71,41 @@ class PodcastGeneratorHelperTests(unittest.TestCase):
         self.assertLess(1000, minimum)
         self.assertGreater(maximum, minimum)
 
+    def test_word_count_bounds_for_all_duration_presets(self) -> None:
+        generator = PodcastGenerator(openai_api_key="sk-test")
+        expected = {
+            5: (675, 825),
+            10: (1350, 1650),
+            15: (2025, 2475),
+            20: (2700, 3300),
+        }
+        for duration, bounds in expected.items():
+            self.assertEqual(generator.word_count_bounds(duration), bounds)
+
+    def test_trim_dialogue_to_word_limit(self) -> None:
+        generator = PodcastGenerator(openai_api_key="sk-test")
+        dialogue = [
+            DialogueSegment("woman", " ".join(["one"] * 120)),
+            DialogueSegment("man", " ".join(["two"] * 80)),
+        ]
+        trimmed = generator._trim_dialogue_to_word_limit(dialogue, max_words=150)
+        self.assertLessEqual(generator._dialogue_word_count(trimmed), 150)
+
+    def test_expand_dialogue_to_word_minimum(self) -> None:
+        generator = PodcastGenerator(openai_api_key="sk-test")
+        dialogue = [
+            DialogueSegment("woman", "This is short."),
+            DialogueSegment("man", "Very short."),
+        ]
+        expanded = generator._expand_dialogue_to_word_minimum(
+            dialogue,
+            min_words=80,
+            max_words=140,
+        )
+        words = generator._dialogue_word_count(expanded)
+        self.assertGreaterEqual(words, 80)
+        self.assertLessEqual(words, 140)
+
     def test_txt_and_docx_extraction(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
