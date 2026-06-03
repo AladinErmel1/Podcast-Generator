@@ -27,17 +27,34 @@ def collect_progress(message: str) -> None:
     st.session_state.setdefault("progress_messages", []).append(message)
 
 
-def ensure_api_key() -> bool:
+def configured_api_key() -> str | None:
     if os.getenv("OPENAI_API_KEY"):
-        return True
+        return os.getenv("OPENAI_API_KEY")
     try:
         api_key = st.secrets.get("OPENAI_API_KEY")
     except Exception:
         api_key = None
     if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-        return True
-    return False
+        return str(api_key)
+    return None
+
+
+def get_api_key() -> str:
+    api_key = configured_api_key()
+    if api_key:
+        st.caption("Using the configured server API key.")
+        return api_key
+
+    api_key = st.text_input(
+        "OpenAI API key",
+        type="password",
+        placeholder="sk-...",
+        help="Your key is used only for this session and is not saved by the app.",
+    ).strip()
+    if not api_key:
+        st.info("Enter your OpenAI API key to generate a podcast.")
+        st.stop()
+    return api_key
 
 
 def require_app_password() -> None:
@@ -58,11 +75,8 @@ def main() -> None:
     st.session_state.setdefault("script_path", None)
     st.session_state.setdefault("audio_path", None)
 
-    if not ensure_api_key():
-        st.error("OPENAI_API_KEY is not configured.")
-        st.stop()
-
     require_app_password()
+    api_key = get_api_key()
 
     uploaded_file = st.file_uploader(
         "Document",
@@ -104,7 +118,10 @@ def main() -> None:
 
         try:
             with st.spinner("Generating podcast..."):
-                generator = PodcastGenerator(progress_callback=collect_progress)
+                generator = PodcastGenerator(
+                    openai_api_key=api_key,
+                    progress_callback=collect_progress,
+                )
                 output_dir = tempfile.mkdtemp(prefix="podcast_output_")
                 script_path, audio_path = generator.create_podcast(
                     document_path=temp_path,
