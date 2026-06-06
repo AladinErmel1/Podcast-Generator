@@ -103,7 +103,11 @@ def generate_heygen_voice_preview(
     heygen_api_key: str,
     voice_id: str,
     speaker_name: str,
+    preview_audio_url: str | None = None,
 ) -> bytes:
+    if preview_audio_url:
+        return download_audio(preview_audio_url)
+
     client = HeyGenClient(heygen_api_key)
     audio_url = client.create_speech_url(
         voice_id=voice_id,
@@ -119,6 +123,22 @@ def load_heygen_voices(heygen_api_key: str) -> None:
     voices = HeyGenClient(heygen_api_key).list_private_voices()
     st.session_state["heygen_voices"] = voices
     st.session_state["heygen_voice_error"] = ""
+
+
+def heygen_voice_select_options(voices) -> list[tuple[str, object]]:
+    label_counts: dict[str, int] = {}
+    for voice in voices:
+        label_counts[voice.label] = label_counts.get(voice.label, 0) + 1
+
+    seen_labels: dict[str, int] = {}
+    options = []
+    for voice in voices:
+        label = voice.label
+        if label_counts[label] > 1:
+            seen_labels[label] = seen_labels.get(label, 0) + 1
+            label = f"{label} - Voice {seen_labels[label]}"
+        options.append((label, voice))
+    return options
 
 
 def select_host_voice(
@@ -166,19 +186,21 @@ def select_host_voice(
         st.warning("Load your HeyGen voices before selecting a personal voice.")
         return host_name, "heygen", ""
 
-    voice_options = {voice.label: voice.voice_id for voice in voices}
+    voice_options = heygen_voice_select_options(voices)
     selected_label = st.selectbox(
         f"{display_name} HeyGen voice",
-        options=list(voice_options.keys()),
+        options=[label for label, _voice in voice_options],
         key=f"{speaker_key}_heygen_voice",
     )
-    voice_id = voice_options[selected_label]
+    selected_voice = next(voice for label, voice in voice_options if label == selected_label)
+    voice_id = selected_voice.voice_id
     if st.button(f"Preview {display_name.lower()}", key=f"{speaker_key}_heygen_preview", use_container_width=True):
         try:
             st.session_state["voice_previews"][speaker_key] = generate_heygen_voice_preview(
                 heygen_api_key,
                 voice_id,
                 host_name.strip() or default_name,
+                selected_voice.preview_audio_url,
             )
         except Exception as exc:
             st.error(f"Preview failed: {exc}")

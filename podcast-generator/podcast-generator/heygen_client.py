@@ -94,6 +94,16 @@ class HeyGenClient:
             "Content-Type": "application/json",
         }
 
+    @staticmethod
+    def _raise_for_status(response: requests.Response, action: str) -> None:
+        if response.status_code == 402:
+            raise RuntimeError(
+                f"HeyGen {action} requires API credits or a plan with speech API access."
+            )
+        if response.status_code == 401:
+            raise RuntimeError(f"HeyGen {action} failed because the API key was rejected.")
+        response.raise_for_status()
+
     def list_private_voices(self) -> list[HeyGenVoice]:
         voices: list[HeyGenVoice] = []
         token: str | None = None
@@ -107,7 +117,7 @@ class HeyGenClient:
                 params=params,
                 timeout=30,
             )
-            response.raise_for_status()
+            self._raise_for_status(response, "voice loading")
             payload = response.json()
             voices.extend(parse_heygen_voices(payload))
             has_more, token = parse_heygen_pagination(payload)
@@ -135,7 +145,7 @@ class HeyGenClient:
             json=payload,
             timeout=60,
         )
-        response.raise_for_status()
+        self._raise_for_status(response, "speech generation")
         return parse_heygen_speech_url(response.json())
 
 

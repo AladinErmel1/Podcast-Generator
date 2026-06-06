@@ -10,7 +10,8 @@ from unittest.mock import Mock, patch
 
 from docx import Document
 
-from heygen_client import HeyGenClient, parse_heygen_speech_url, parse_heygen_voices
+from app import generate_heygen_voice_preview, heygen_voice_select_options
+from heygen_client import HeyGenClient, HeyGenVoice, parse_heygen_speech_url, parse_heygen_voices
 from podcast_generator import DialogueSegment, PodcastGenerator
 
 
@@ -185,6 +186,31 @@ class PodcastGeneratorHelperTests(unittest.TestCase):
         self.assertEqual(len(voices), 1)
         self.assertEqual(voices[0].voice_id, "voice-1")
         self.assertEqual(voices[0].preview_audio_url, "https://example.com/preview.mp3")
+
+    def test_duplicate_heygen_voice_labels_stay_selectable(self) -> None:
+        options = heygen_voice_select_options(
+            [
+                HeyGenVoice("voice-1", "Aladin Ermel", "German", "male"),
+                HeyGenVoice("voice-2", "Aladin Ermel", "German", "male"),
+            ]
+        )
+
+        self.assertEqual(len(options), 2)
+        self.assertEqual(options[0][1].voice_id, "voice-1")
+        self.assertEqual(options[1][1].voice_id, "voice-2")
+        self.assertNotEqual(options[0][0], options[1][0])
+
+    def test_heygen_preview_uses_existing_preview_url(self) -> None:
+        with patch("app.download_audio", return_value=b"preview-audio") as download:
+            audio = generate_heygen_voice_preview(
+                "heygen-test",
+                "voice-1",
+                "Sarah",
+                "https://example.com/preview.mp3",
+            )
+
+        self.assertEqual(audio, b"preview-audio")
+        download.assert_called_once_with("https://example.com/preview.mp3")
 
     def test_parse_heygen_speech_url(self) -> None:
         self.assertEqual(
