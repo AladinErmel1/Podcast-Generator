@@ -6,10 +6,11 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from docx import Document
 
-from heygen_client import parse_heygen_speech_url, parse_heygen_voices
+from heygen_client import HeyGenClient, parse_heygen_speech_url, parse_heygen_voices
 from podcast_generator import DialogueSegment, PodcastGenerator
 
 
@@ -166,6 +167,25 @@ class PodcastGeneratorHelperTests(unittest.TestCase):
         self.assertEqual(voices[0].voice_id, "voice-1")
         self.assertIn("Aladin Ermel", voices[0].label)
 
+    def test_parse_heygen_official_data_list_response(self) -> None:
+        voices = parse_heygen_voices(
+            {
+                "data": [
+                    {
+                        "voice_id": "voice-1",
+                        "name": "Aladin Ermel",
+                        "language": "Multilingual",
+                        "gender": "Male",
+                        "preview_audio_url": "https://example.com/preview.mp3",
+                    }
+                ],
+                "has_more": False,
+            }
+        )
+        self.assertEqual(len(voices), 1)
+        self.assertEqual(voices[0].voice_id, "voice-1")
+        self.assertEqual(voices[0].preview_audio_url, "https://example.com/preview.mp3")
+
     def test_parse_heygen_speech_url(self) -> None:
         self.assertEqual(
             parse_heygen_speech_url({"data": {"audio_url": "https://example.com/audio.mp3"}}),
@@ -173,6 +193,24 @@ class PodcastGeneratorHelperTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             parse_heygen_speech_url({"data": {}})
+
+    def test_heygen_speech_uses_documented_request_fields(self) -> None:
+        response = Mock()
+        response.json.return_value = {"data": {"audio_url": "https://example.com/audio.mp3"}}
+        response.raise_for_status.return_value = None
+
+        with patch("heygen_client.requests.post", return_value=response) as post:
+            audio_url = HeyGenClient("heygen-test").create_speech_url(
+                voice_id="voice-1",
+                text="Hello.",
+            )
+
+        self.assertEqual(audio_url, "https://example.com/audio.mp3")
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["voice_id"], "voice-1")
+        self.assertEqual(payload["input_type"], "text")
+        self.assertNotIn("voiceId", payload)
+        self.assertNotIn("inputType", payload)
 
     def test_mixed_provider_tts_routing(self) -> None:
         class FakeSpeech:

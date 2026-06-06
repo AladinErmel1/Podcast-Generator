@@ -17,6 +17,7 @@ class HeyGenVoice:
     name: str
     language: str | None = None
     gender: str | None = None
+    preview_audio_url: str | None = None
 
     @property
     def label(self) -> str:
@@ -24,17 +25,25 @@ class HeyGenVoice:
         return f"{self.name} ({details})" if details else self.name
 
 
-def parse_heygen_voices(payload: dict[str, Any]) -> list[HeyGenVoice]:
+def parse_heygen_voices(payload: dict[str, Any] | list[Any]) -> list[HeyGenVoice]:
     """Parse HeyGen voice-list responses across common response shapes."""
-    raw_voices = payload.get("voices")
-    if raw_voices is None:
-        raw_voices = payload.get("data", {}).get("voices")
-    if raw_voices is None and isinstance(payload.get("data"), list):
-        raw_voices = payload["data"]
+    if isinstance(payload, list):
+        raw_voices = payload
+    elif isinstance(payload, dict):
+        data = payload.get("data")
+        raw_voices = payload.get("voices")
+        if raw_voices is None and isinstance(data, dict):
+            raw_voices = data.get("voices") or data.get("items") or data.get("list")
+        if raw_voices is None and isinstance(data, list):
+            raw_voices = data
+    else:
+        raw_voices = []
     raw_voices = raw_voices or []
 
     voices: list[HeyGenVoice] = []
     for item in raw_voices:
+        if not isinstance(item, dict):
+            continue
         voice_id = item.get("voice_id") or item.get("voiceId") or item.get("id")
         name = item.get("name") or item.get("voice_name") or item.get("display_name")
         if not voice_id or not name:
@@ -45,9 +54,16 @@ def parse_heygen_voices(payload: dict[str, Any]) -> list[HeyGenVoice]:
                 name=str(name),
                 language=item.get("language") or item.get("locale"),
                 gender=item.get("gender"),
+                preview_audio_url=item.get("preview_audio_url") or item.get("previewAudioUrl"),
             )
         )
     return voices
+
+
+def parse_heygen_pagination(payload: dict[str, Any] | list[Any]) -> tuple[bool, str | None]:
+    if not isinstance(payload, dict):
+        return False, None
+    return bool(payload.get("has_more")), payload.get("next_token") or payload.get("nextToken")
 
 
 def parse_heygen_speech_url(payload: dict[str, Any]) -> str:
@@ -79,14 +95,24 @@ class HeyGenClient:
         }
 
     def list_private_voices(self) -> list[HeyGenVoice]:
-        response = requests.get(
-            f"{self.base_url}/v3/voices",
-            headers=self.headers,
-            params={"type": "private", "engine": "starfish", "limit": 100},
-            timeout=30,
-        )
-        response.raise_for_status()
-        return parse_heygen_voices(response.json())
+        voices: list[HeyGenVoice] = []
+        token: str | None = None
+        while True:
+            params: dict[str, Any] = {"type": "private", "engine": "starfish", "limit": 100}
+            if token:
+                params["token"] = token
+            response = requests.get(
+                f"{self.base_url}/v3/voices",
+                headers=self.headers,
+                params=params,
+                timeout=30,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            voices.extend(parse_heygen_voices(payload))
+            has_more, token = parse_heygen_pagination(payload)
+            if not has_more or not token:
+                return voices
 
     def create_speech_url(
         self,
@@ -96,9 +122,9 @@ class HeyGenClient:
         locale: str | None = None,
     ) -> str:
         payload: dict[str, Any] = {
-            "voiceId": voice_id,
+            "voice_id": voice_id,
             "text": text,
-            "inputType": "text",
+            "input_type": "text",
             "speed": speed,
         }
         if locale:
@@ -117,4 +143,3 @@ def download_audio(url: str) -> bytes:
     response = requests.get(url, timeout=60)
     response.raise_for_status()
     return response.content
-
