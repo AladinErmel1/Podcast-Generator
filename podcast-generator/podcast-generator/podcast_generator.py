@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 import config
+from heygen_client import HeyGenClient, download_audio
 
 load_dotenv()
 
@@ -43,6 +44,8 @@ class PodcastGenerator:
         tts_model: str | None = None,
         speaker_names: dict[str, str] | None = None,
         speaker_voices: dict[str, str] | None = None,
+        speaker_voice_providers: dict[str, str] | None = None,
+        heygen_api_key: str | None = None,
         progress_callback: ProgressCallback | None = None,
     ):
         self.api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
@@ -58,6 +61,8 @@ class PodcastGenerator:
         self.voices = dict(config.SPEAKER_VOICES)
         if speaker_voices:
             self.voices.update(speaker_voices)
+        self.voice_providers = self._normalize_voice_providers(speaker_voice_providers)
+        self.heygen_api_key = heygen_api_key
         self.words_per_minute = config.WORDS_PER_MINUTE
         self.target_duration_minutes = config.DEFAULT_DURATION_MINUTES
         self.progress_callback = progress_callback
@@ -96,6 +101,16 @@ class PodcastGenerator:
         if normalized in {self._speaker_label("man"), "MIKE"}:
             return "man"
         return None
+
+    @staticmethod
+    def _normalize_voice_providers(providers: dict[str, str] | None) -> dict[str, str]:
+        normalized = {"woman": "openai", "man": "openai"}
+        for speaker, provider in (providers or {}).items():
+            provider_value = provider.strip().lower()
+            if provider_value not in {"openai", "heygen"}:
+                raise ValueError("Voice provider must be 'openai' or 'heygen'.")
+            normalized[speaker] = provider_value
+        return normalized
 
     @staticmethod
     def validate_duration(duration_minutes: int) -> int:
@@ -700,6 +715,11 @@ Current script:
         self._log(f"Audio saved: {path}")
 
     def _write_tts_segment(self, speaker: str, text: str, output_path: Path) -> None:
+        provider = self.voice_providers.get(speaker, "openai")
+        if provider == "heygen":
+            self._write_heygen_tts_segment(speaker, text, output_path)
+            return
+
         kwargs = {
             "model": self.tts_model,
             "voice": self.voices[speaker],
@@ -712,6 +732,17 @@ Current script:
 
         response = self.client.audio.speech.create(**kwargs)
         output_path.write_bytes(response.content)
+
+    def _write_heygen_tts_segment(self, speaker: str, text: str, output_path: Path) -> None:
+        if not self.heygen_api_key:
+            raise ValueError("HeyGen API key is required for HeyGen voices.")
+        client = HeyGenClient(self.heygen_api_key)
+        audio_url = client.create_speech_url(
+            voice_id=self.voices[speaker],
+            text=text,
+            speed=config.SPEECH_SPEED,
+        )
+        output_path.write_bytes(download_audio(audio_url))
 
     def _tts_instructions(self, speaker: str) -> str:
         name = self._speaker_label(speaker).title()

@@ -18,11 +18,12 @@ https://podcast-generatorgit-3lfrcezzxvhrwt2nfpkup3.streamlit.app/
 3. Upload a PDF, TXT, or DOCX document.
 4. Choose a podcast length: 5, 10, 15, or 20 minutes.
 5. Optional: change the two host names and voices.
-6. Optional: preview the voices.
-7. Click **Generate**.
-8. Download the script or MP3.
+6. Optional: enter a HeyGen API key and load your private HeyGen voices.
+7. Optional: preview the voices.
+8. Click **Generate**.
+9. Download the script or MP3.
 
-Your API key is used only for the current app session and is not saved by the app.
+Your OpenAI API key is required for script generation and built-in voices. A HeyGen API key is optional and only needed if you want to use your private HeyGen voices. API keys are used only for the current app session and are not saved by the app.
 
 ## Option 2: Use The GitHub Project
 
@@ -48,4 +49,4 @@ The GitHub project contains the source code, app configuration, and generator lo
 
 - A source-grounded podcast script.
 - A natural conversation between two hosts.
-- Optional MP3 audio.
+- Optional MP3 audio using OpenAI built-in voices or private HeyGen voices.

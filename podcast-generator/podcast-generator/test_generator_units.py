@@ -9,6 +9,7 @@ from pathlib import Path
 
 from docx import Document
 
+from heygen_client import parse_heygen_speech_url, parse_heygen_voices
 from podcast_generator import DialogueSegment, PodcastGenerator
 
 
@@ -128,6 +129,89 @@ class PodcastGeneratorHelperTests(unittest.TestCase):
             generator = PodcastGenerator(openai_api_key="sk-test")
             with self.assertRaises(ValueError):
                 generator.extract_text(path)
+
+    def test_voice_provider_validation(self) -> None:
+        generator = PodcastGenerator(
+            openai_api_key="sk-test",
+            speaker_voice_providers={"woman": "openai", "man": "heygen"},
+        )
+        self.assertEqual(generator.voice_providers["woman"], "openai")
+        self.assertEqual(generator.voice_providers["man"], "heygen")
+        with self.assertRaises(ValueError):
+            PodcastGenerator(
+                openai_api_key="sk-test",
+                speaker_voice_providers={"woman": "invalid"},
+            )
+
+    def test_parse_heygen_private_voices(self) -> None:
+        voices = parse_heygen_voices(
+            {
+                "data": {
+                    "voices": [
+                        {
+                            "voice_id": "voice-1",
+                            "name": "Aladin Ermel",
+                            "language": "Mehrsprachig",
+                            "gender": "Male",
+                        },
+                        {
+                            "voiceId": "voice-2",
+                            "voice_name": "Aladin Avatar",
+                        },
+                    ]
+                }
+            }
+        )
+        self.assertEqual(len(voices), 2)
+        self.assertEqual(voices[0].voice_id, "voice-1")
+        self.assertIn("Aladin Ermel", voices[0].label)
+
+    def test_parse_heygen_speech_url(self) -> None:
+        self.assertEqual(
+            parse_heygen_speech_url({"data": {"audio_url": "https://example.com/audio.mp3"}}),
+            "https://example.com/audio.mp3",
+        )
+        with self.assertRaises(ValueError):
+            parse_heygen_speech_url({"data": {}})
+
+    def test_mixed_provider_tts_routing(self) -> None:
+        class FakeSpeech:
+            def create(self, **kwargs):
+                class Response:
+                    content = b"openai-audio"
+
+                return Response()
+
+        class FakeAudio:
+            speech = FakeSpeech()
+
+        class FakeClient:
+            audio = FakeAudio()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            generator = PodcastGenerator(
+                openai_api_key="sk-test",
+                heygen_api_key="heygen-test",
+                speaker_voice_providers={"woman": "openai", "man": "heygen"},
+                speaker_voices={"woman": "marin", "man": "heygen-voice"},
+            )
+            generator.client = FakeClient()
+            calls = []
+
+            def fake_heygen(speaker, text, output_path):
+                calls.append((speaker, text))
+                output_path.write_bytes(b"heygen-audio")
+
+            generator._write_heygen_tts_segment = fake_heygen
+            openai_path = temp_root / "openai.mp3"
+            heygen_path = temp_root / "heygen.mp3"
+            generator._write_tts_segment("woman", "OpenAI line.", openai_path)
+            generator._write_tts_segment("man", "HeyGen line.", heygen_path)
+
+            self.assertEqual(openai_path.read_bytes(), b"openai-audio")
+            self.assertEqual(heygen_path.read_bytes(), b"heygen-audio")
+            self.assertEqual(calls, [("man", "HeyGen line.")])
 
 
 if __name__ == "__main__":
